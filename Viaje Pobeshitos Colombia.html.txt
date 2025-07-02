@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Planificador de Viaje a Colombia</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;700&display=swap" rel="stylesheet">
+    <!-- Chosen Palette: Calm Harmony (Light Beige, Muted Green, Dark Gray) -->
+    <!-- Application Structure Plan: A dashboard-style SPA with a primary toggle to switch between 'Económico' and 'Confort' plans. This structure was chosen to transform the static report into an interactive decision-making tool. The user flow is centered on comparing the two plans via key metrics, a dynamic budget chart, and an interactive itinerary. This is more usable than a long, static document as it allows for direct comparison and focused exploration of daily details. -->
+    <!-- Visualization & Content Choices: 1. Total Costs (Report Info) -> Compare (Goal) -> Stat Cards (Viz) -> Update on Toggle (Interaction) -> Quick top-level comparison (Justification) -> JS/HTML. 2. Cost Breakdown (Report Info) -> Inform/Compare (Goal) -> Donut Chart (Viz) -> Updates on Toggle (Interaction) -> Visual representation of budget allocation (Justification) -> Chart.js (Canvas). 3. Itinerary Table (Report Info) -> Organize/Inform (Goal) -> Collapsible Day Cards (Viz) -> Click to expand, content updates on toggle (Interaction) -> Reduces clutter and focuses user attention (Justification) -> JS/HTML. 4. Travel Route (Report Info) -> Inform (Goal) -> Stylized CSS Map (Viz) -> Static (Interaction) -> Provides quick geographic context (Justification) -> HTML/Tailwind. 5. Packing List (New Feature) -> Inform (Goal) -> Dynamic Text (Viz) -> Button Click (Interaction) -> Provides a useful, AI-generated packing list based on itinerary details (Justification) -> Gemini API. -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body {
+            font-family: 'Montserrat', sans-serif;
+            background-color: #F8F7F2;
+            color: #333D44;
+        }
+        .bg-primary { background-color: #4A6C6F; }
+        .text-primary { color: #4A6C6F; }
+        .bg-accent { background-color: #E8E6DA; }
+        .border-accent { border-color: #E8E6DA; }
+        .shadow-custom { box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08); }
+        .transition-all-fast { transition: all 0.2s ease-in-out; }
+        .chart-container {
+            position: relative;
+            width: 100%;
+            max-width: 400px;
+            height: 300px;
+            margin: auto;
+        }
+        @media (min-width: 768px) {
+            .chart-container {
+                height: 400px;
+            }
+        }
+        .btn-llm {
+            background-color: #4A6C6F;
+            color: white;
+            padding: 12px 24px;
+            border-radius: 9999px; /* Tailwind's rounded-full */
+            font-weight: bold;
+            transition: background-color 0.3s ease;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .btn-llm:hover {
+            background-color: #3A5A5D;
+        }
+        .btn-llm:disabled {
+            background-color: #A9A9A9;
+            cursor: not-allowed;
+        }
+        .loading-spinner {
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-top: 4px solid #fff;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+            margin-left: 8px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="antialiased">
+
+    <div class="container mx-auto p-4 sm:p-6 lg:p-8">
+        
+        <header class="text-center mb-8">
+            <h1 class="text-3xl md:text-4xl font-bold text-primary">Plan de Viaje a Colombia</h1>
+            <p class="text-lg mt-2 text-gray-600">Una aventura de 22 días para dos (10-31 de Agosto)</p>
+        </header>
+
+        <main>
+            <section id="controls" class="bg-white rounded-xl shadow-custom p-6 mb-8">
+                <div class="flex flex-col sm:flex-row justify-center items-center gap-4">
+                    <span class="text-lg font-medium">Plan Económico</span>
+                    <label for="planToggle" class="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" id="planToggle" class="sr-only peer">
+                        <div class="w-14 h-8 bg-gray-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-1 after:left-[4px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-primary"></div>
+                    </label>
+                    <span class="text-lg font-medium">Plan Confort</span>
+                </div>
+                <p class="text-center text-gray-500 mt-4">Usa el interruptor para cambiar entre los dos planes y ver cómo se actualizan todos los costos y actividades.</p>
+            </section>
+
+            <section id="key-metrics" class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8 text-center">
+                <div class="bg-white rounded-xl shadow-custom p-6">
+                    <h3 class="text-lg font-medium text-gray-500">Costo Total Estimado</h3>
+                    <p id="total-cost" class="text-3xl font-bold text-primary mt-2">€1,481</p>
+                </div>
+                <div class="bg-white rounded-xl shadow-custom p-6">
+                    <h3 class="text-lg font-medium text-gray-500">Duración del Viaje</h3>
+                    <p class="text-3xl font-bold text-primary mt-2">22 Días</p>
+                </div>
+                <div class="bg-white rounded-xl shadow-custom p-6">
+                    <h3 class="text-lg font-medium text-gray-500">Destinos Clave</h3>
+                    <p class="text-3xl font-bold text-primary mt-2">3 Regiones</p>
+                </div>
+            </section>
+
+            <section id="budget-summary" class="bg-white rounded-xl shadow-custom p-6 mb-8">
+                <h2 class="text-2xl font-bold text-center mb-6 text-primary">Resumen del Presupuesto</h2>
+                <p class="text-center text-gray-600 max-w-2xl mx-auto mb-6">Aquí puedes ver cómo se distribuye tu presupuesto. Pasa el cursor sobre el gráfico para ver los detalles de cada categoría. El presupuesto cambia instantáneamente al seleccionar un plan diferente.</p>
+                <div class="flex flex-col lg:flex-row items-center justify-around gap-8">
+                    <div class="chart-container">
+                        <canvas id="budgetChart"></canvas>
+                    </div>
+                    <div id="budget-details" class="w-full lg:w-1/2">
+                        <ul id="budget-list" class="space-y-3"></ul>
+                    </div>
+                </div>
+            </section>
+
+            <section id="itinerary" class="mb-8">
+                <h2 class="text-2xl font-bold text-center mb-6 text-primary">Itinerario Interactivo</h2>
+                 <p class="text-center text-gray-600 max-w-2xl mx-auto mb-6">Explora el plan día por día. Haz clic en cada día para ver los detalles de las actividades, alojamiento y transporte. La información se actualiza según el plan que hayas seleccionado.</p>
+                <div id="itinerary-container" class="space-y-4">
+                </div>
+            </section>
+            
+            <section id="route-map" class="bg-white rounded-xl shadow-custom p-6 mb-8">
+                <h2 class="text-2xl font-bold text-center mb-6 text-primary">Mapa de la Ruta</h2>
+                <p class="text-center text-gray-600 max-w-2xl mx-auto mb-6">Esta es una representación visual de tu viaje a través de Colombia, conectando los principales destinos desde el centro andino hasta la costa caribeña.</p>
+                <div class="relative w-full max-w-lg mx-auto h-96 border-2 border-dashed border-gray-300 rounded-lg p-4">
+                    <div class="absolute" style="top: 55%; left: 30%;">
+                        <div class="w-3 h-3 bg-primary rounded-full"></div>
+                        <span class="absolute -bottom-6 -left-4 text-sm font-medium">Bogotá</span>
+                    </div>
+                    <div class="absolute" style="top: 35%; left: 20%;">
+                        <div class="w-3 h-3 bg-primary rounded-full"></div>
+                        <span class="absolute -bottom-6 -left-4 text-sm font-medium">Medellín</span>
+                    </div>
+                    <div class="absolute" style="top: 10%; left: 40%;">
+                        <div class="w-3 h-3 bg-primary rounded-full"></div>
+                        <span class="absolute -bottom-6 -left-5 text-sm font-medium">Cartagena</span>
+                    </div>
+                    <div class="absolute" style="top: 12%; left: 65%;">
+                        <div class="w-3 h-3 bg-primary rounded-full"></div>
+                        <span class="absolute -bottom-6 -left-6 text-sm font-medium">Santa Marta</span>
+                    </div>
+
+                    <div class="absolute w-px h-24 bg-gray-400 transform -rotate-45" style="top: 39%; left: 27%;"></div>
+                    <div class="absolute w-px h-28 bg-gray-400 transform rotate-45" style="top: 15%; left: 30%;"></div>
+                    <div class="absolute w-px h-24 bg-gray-400" style="top: 11%; left: 52.5%;"></div>
+                    <div class="absolute w-px h-48 bg-gray-400 transform rotate-12" style="top: 16%; left: 68%;"></div>
+                </div>
+            </section>
+            
+            <section id="recommendations" class="bg-white rounded-xl shadow-custom p-6 mb-8">
+                <h2 class="text-2xl font-bold text-center mb-6 text-primary">Recomendaciones Clave</h2>
+                <ul class="list-disc list-inside space-y-3 max-w-3xl mx-auto text-gray-700">
+                    <li><b>Reserva Anticipada de Vuelos Internos:</b> Para asegurar las mejores tarifas, especialmente en rutas populares, reserva tus vuelos con la mayor antelación posible.</li>
+                    <li><b>Aprovecha las Conexiones Familiares:</b> Coordina con tu familia para las estancias en Girardot y las excursiones. Es un gran ahorro y una experiencia más auténtica.</li>
+                    <li><b>Flexibilidad en la Gastronomía:</b> Atrévete a probar los "menús del día" y la comida local en mercados para una experiencia culinaria deliciosa y económica.</li>
+                    <li><b>Transporte Urbano Inteligente:</b> Usa el transporte público como el Metro en Medellín y combina con caminatas. Utiliza apps de transporte para mayor comodidad o seguridad por la noche.</li>
+                    <li><b>Sé Flexible:</b> Este itinerario es una guía. Siéntete libre de adaptarlo según el clima, tu energía o nuevas recomendaciones que descubras en el camino.</li>
+                </ul>
+            </section>
+
+            <section id="packing-list-generator" class="bg-white rounded-xl shadow-custom p-6 mb-8">
+                <h2 class="text-2xl font-bold text-center mb-6 text-primary">✨ Generador de Lista de Equipaje ✨</h2>
+                <p class="text-center text-gray-600 max-w-2xl mx-auto mb-6">Haz clic en el botón para obtener una lista de equipaje sugerida, adaptada a los destinos y actividades de tu viaje. ¡Ideal para no olvidar nada!</p>
+                <div class="text-center mb-6">
+                    <button id="generatePackingListBtn" class="btn-llm">
+                        Generar Lista de Equipaje
+                        <span id="packingListSpinner" class="hidden loading-spinner"></span>
+                    </button>
+                </div>
+                <div id="packingListOutput" class="hidden bg-gray-50 p-6 rounded-lg border border-accent">
+                    <h3 class="text-xl font-bold text-primary mb-4">Tu Lista de Equipaje Personalizada:</h3>
+                    <div id="packingListContent" class="space-y-4 text-gray-700">
+                        <!-- Packing list content will be inserted here -->
+                    </div>
+                </div>
+            </section>
+
+        </main>
+    </div>
+
+    <script>
+        const tripData = {
+            economico: {
+                totalCost: 1481,
+                budget: {
+                    labels: ['Alojamiento', 'Comida', 'Actividades', 'Transporte Local', 'Transporte Interurbano'],
+                    data: [157, 396, 448, 110, 236],
+                },
+                itinerary: [
+                    { day: 1, date: '10 Ago', title: 'Bogotá: Llegada y Descanso', icon: '🛬', details: 'Aclimatación a la altitud y descanso. Alojamiento con familia. Costo diario: €23.' },
+                    { day: 2, date: '11 Ago', title: 'Bogotá: Centro Histórico', icon: '🏛️', details: 'Visita a La Candelaria, Museo del Oro y Museo Nacional. Alojamiento con familia. Costo diario: €28.' },
+                    { day: 3, date: '12 Ago', title: 'Tominé/Guatavita', icon: '🏞️', details: 'Excursión al Embalse de Tominé y Pueblitour en Guatavita. Transporte familiar. Costo diario: €38.' },
+                    { day: 4, date: '13 Ago', title: 'Boyacá (Villa de Leyva)', icon: '🏺', details: 'Visita a Ráquira y la Plaza Mayor de Villa de Leyva. Transporte familiar. Costo diario: €28.' },
+                    { day: 5, date: '14 Ago', title: 'Girardot', icon: '☀️', details: 'Viaje a Girardot y descanso en la finca familiar. Costo diario: €18.' },
+                    { day: 6, date: '15 Ago', title: 'Girardot', icon: '🚤', details: 'Paseo en barco por el Río Magdalena. Alojamiento en finca familiar. Costo diario: €26.' },
+                    { day: 7, date: '16 Ago', title: 'Regreso a Bogotá', icon: '🚗', details: 'Viaje de regreso a Bogotá. Costo diario: €18.' },
+                    { day: 8, date: '17 Ago', title: 'Vuelo a Medellín', icon: '✈️', details: 'Vuelo Bogotá-Medellín. Alojamiento en hotel económico. Costo diario: €36.' },
+                    { day: 9, date: '18 Ago', title: 'Medellín: Comuna 13', icon: '🎨', details: 'Tour por la Comuna 13 para conocer su historia y arte. Costo diario: €92.' },
+                    { day: 10, date: '19 Ago', title: 'Excursión a Guatapé', icon: '⛰️', details: 'Visita a la Piedra del Peñol y el colorido pueblo de Guatapé. Costo diario: €129.' },
+                    { day: 11, date: '20 Ago', title: 'Medellín: Cultura', icon: '🌺', details: 'Visita al Museo de Antioquia y el Jardín Botánico. Costo diario: €46.' },
+                    { day: 12, date: '21 Ago', title: 'Vuelo a Cartagena', icon: '✈️', details: 'Vuelo Medellín-Cartagena. Alojamiento en hotel económico. Costo diario: €39.' },
+                    { day: 13, date: '22 Ago', title: 'Cartagena: Historia', icon: '🏰', details: 'Exploración de la Ciudad Amurallada y el Castillo San Felipe. Costo diario: €54.' },
+                    { day: 14, date: '23 Ago', title: 'Islas del Rosario', icon: '🏝️', details: 'Tour de un día a las Islas del Rosario para disfrutar de playas y snorkel. Costo diario: €170.' },
+                    { day: 15, date: '24 Ago', title: 'Cartagena: Getsemaní', icon: '🌇', details: 'Paseo por el barrio de Getsemaní y disfrutar del atardecer. Costo diario: €44.' },
+                    { day: 16, date: '25 Ago', title: 'Bus a Santa Marta', icon: '🚌', details: 'Viaje en bus Cartagena-Santa Marta. Alojamiento en hotel económico. Costo diario: €35.' },
+                    { day: 17, date: '26 Ago', title: 'Parque Tayrona', icon: '🌴', details: 'Día de senderismo y playas en el Parque Nacional Natural Tayrona. Costo diario: €61.' },
+                    { day: 18, date: '27 Ago', title: 'Santa Marta / Barranquilla', icon: '🐠', details: 'Visita al Acuario del Rodadero y excursión a Barranquilla. Costo diario: €104.' },
+                    { day: 19, date: '28 Ago', title: 'Bogotá (Cumpleaños)', icon: '🎉', details: 'Vuelo de regreso a Bogotá. Noche de celebración de cumpleaños. Costo diario: €55.' },
+                    { day: 20, date: '29 Ago', title: 'Bogotá: Relax', icon: '☕', details: 'Día de relax y actividades de cumpleaños. Costo diario: €45.' },
+                    { day: 21, date: '30 Ago', title: 'Bogotá: Preparativos', icon: '🛍️', details: 'Día para compras de última hora y preparar el viaje de regreso. Costo diario: €35.' },
+                    { day: 22, date: '31 Ago', title: 'Salida de Bogotá', icon: '🛫', details: 'Vuelo de regreso a casa. Fin de la aventura. Costo diario: €23.' },
+                ]
+            },
+            confort: {
+                totalCost: 3285,
+                budget: {
+                    labels: ['Alojamiento', 'Comida', 'Actividades', 'Transporte Local', 'Transporte Interurbano'],
+                    data: [833, 836, 625, 225, 467],
+                },
+                itinerary: [
+                    { day: 1, date: '10 Ago', title: 'Bogotá: Llegada y Descanso', icon: '🛬', details: 'Aclimatación y descanso. Alojamiento con familia. Costo diario: €53.' },
+                    { day: 2, date: '11 Ago', title: 'Bogotá: Cultura y Vistas', icon: '🚠', details: 'Centro Histórico, museos y subida a Monserrate. Alojamiento familiar. Costo diario: €73.' },
+                    { day: 3, date: '12 Ago', title: 'Tominé/Guatavita con Kayak', icon: '🛶', details: 'Excursión a Guatavita con actividad de Kayak en el embalse. Costo diario: €58.' },
+                    { day: 4, date: '13 Ago', title: 'Boyacá (Tour Villa de Leyva)', icon: '🏺', details: 'Visita a Ráquira y City Tour guiado por Villa de Leyva. Costo diario: €68.' },
+                    { day: 5, date: '14 Ago', title: 'Girardot (Confort)', icon: '☀️', details: 'Viaje a Girardot. Descanso y actividades en la finca familiar. Costo diario: €53.' },
+                    { day: 6, date: '15 Ago', title: 'Girardot (Confort)', icon: '🚤', details: 'Paseo en barco por el Río Magdalena y otras actividades. Costo diario: €53.' },
+                    { day: 7, date: '16 Ago', title: 'Regreso a Bogotá', icon: '🚗', details: 'Viaje de regreso a Bogotá. Costo diario: €38.' },
+                    { day: 8, date: '17 Ago', title: 'Vuelo a Medellín', icon: '✈️', details: 'Vuelo Bogotá-Medellín. Alojamiento en hotel de gama media-alta. Costo diario: €116.' },
+                    { day: 9, date: '18 Ago', title: 'Medellín: Tour Completo', icon: '🎨', details: 'Tour por la Comuna 13 y otros tours adicionales por la ciudad. Costo diario: €206.' },
+                    { day: 10, date: '19 Ago', title: 'Excursión a Guatapé VIP', icon: '⛰️', details: 'Tour más completo a Guatapé con mejores servicios. Costo diario: €206.' },
+                    { day: 11, date: '20 Ago', title: 'Medellín: Cultura y Compras', icon: '🛍️', details: 'Visita a museos, Jardín Botánico y tarde de compras. Costo diario: €136.' },
+                    { day: 12, date: '21 Ago', title: 'Vuelo a Cartagena', icon: '✈️', details: 'Vuelo Medellín-Cartagena. Alojamiento en hotel de gama media-alta. Costo diario: €183.' },
+                    { day: 13, date: '22 Ago', title: 'Cartagena: Tour Privado', icon: '🏰', details: 'Tour privado por la Ciudad Amurallada y Castillo San Felipe. Costo diario: €223.' },
+                    { day: 14, date: '23 Ago', title: 'Islas del Rosario (Catamarán)', icon: '⛵', details: 'Excursión a las Islas del Rosario en catamarán o con acceso a club de playa. Costo diario: €313.' },
+                    { day: 15, date: '24 Ago', title: 'Cartagena: Atardecer en Barco', icon: '🌇', details: 'Paseo por Getsemaní y un tour en barco para ver el atardecer. Costo diario: €203.' },
+                    { day: 16, date: '25 Ago', title: 'Bus a Santa Marta', icon: '🚌', details: 'Viaje en bus Cartagena-Santa Marta. Alojamiento en hotel superior. Costo diario: €91.' },
+                    { day: 17, date: '26 Ago', title: 'Parque Tayrona con Guía', icon: '🌴', details: 'Visita al Parque Tayrona con guía opcional para una mejor experiencia. Costo diario: €131.' },
+                    { day: 18, date: '27 Ago', title: 'Santa Marta / Barranquilla', icon: '🐠', details: 'Acuario Rodadero, Malecón de Barranquilla y Museo del Caribe. Costo diario: €181.' },
+                    { day: 19, date: '28 Ago', title: 'Bogotá (Cumpleaños Especial)', icon: '🎂', details: 'Vuelo a Bogotá. Cena de cumpleaños en un restaurante especial. Costo diario: €150.' },
+                    { day: 20, date: '29 Ago', title: 'Bogotá: Relax y Compras', icon: '☕', details: 'Día de relax, actividades de cumpleaños y compras. Costo diario: €120.' },
+                    { day: 21, date: '30 Ago', title: 'Bogotá: Preparativos', icon: '🛍️', details: 'Día para preparativos de salida y compras. Costo diario: €100.' },
+                    { day: 22, date: '31 Ago', title: 'Salida de Bogotá', icon: '🛫', details: 'Vuelo de regreso a casa. Fin de la aventura. Costo diario: €53.' },
+                ]
+            }
+        };
+
+        let currentPlan = 'economico';
+        let budgetChart;
+
+        const planToggle = document.getElementById('planToggle');
+        const totalCostEl = document.getElementById('total-cost');
+        const itineraryContainer = document.getElementById('itinerary-container');
+        const budgetListEl = document.getElementById('budget-list');
+        const ctx = document.getElementById('budgetChart').getContext('2d');
+        const generatePackingListBtn = document.getElementById('generatePackingListBtn');
+        const packingListSpinner = document.getElementById('packingListSpinner');
+        const packingListOutput = document.getElementById('packingListOutput');
+        const packingListContent = document.getElementById('packingListContent');
+
+        function formatCurrency(value) {
+            return `€${value.toLocaleString('es-ES')}`;
+        }
+
+        function createItinerary(plan) {
+            itineraryContainer.innerHTML = '';
+            plan.itinerary.forEach(item => {
+                const div = document.createElement('div');
+                div.className = 'bg-white rounded-xl shadow-custom overflow-hidden';
+                div.innerHTML = `
+                    <div class="p-4 cursor-pointer flex justify-between items-center itinerary-header hover:bg-accent transition-all-fast">
+                        <div class="flex items-center gap-4">
+                            <span class="text-2xl">${item.icon}</span>
+                            <div>
+                                <p class="font-bold text-primary">Día ${item.day}: ${item.title}</p>
+                                <p class="text-sm text-gray-500">${item.date}</p>
+                            </div>
+                        </div>
+                        <span class="transform transition-transform duration-300 text-primary font-bold text-xl">+</span>
+                    </div>
+                    <div class="p-4 border-t border-accent hidden itinerary-details bg-gray-50">
+                        <p class="text-gray-700">${item.details}</p>
+                    </div>
+                `;
+                itineraryContainer.appendChild(div);
+            });
+
+            document.querySelectorAll('.itinerary-header').forEach(header => {
+                header.addEventListener('click', () => {
+                    const details = header.nextElementSibling;
+                    const icon = header.querySelector('span.transform');
+                    details.classList.toggle('hidden');
+                    if (details.classList.contains('hidden')) {
+                        icon.classList.remove('rotate-45');
+                    } else {
+                        icon.classList.add('rotate-45');
+                    }
+                });
+            });
+        }
+        
+        function updateBudgetDetails(plan) {
+            budgetListEl.innerHTML = '';
+            const colors = ['#4A6C6F', '#7E9C9F', '#B2CDCF', '#E8E6DA', '#A9A9A9'];
+            plan.budget.labels.forEach((label, index) => {
+                const li = document.createElement('li');
+                li.className = 'flex items-center justify-between p-3 rounded-lg';
+                li.innerHTML = `
+                    <div class="flex items-center">
+                        <span class="w-3 h-3 rounded-full mr-3" style="background-color: ${colors[index]}"></span>
+                        <span class="font-medium">${label}</span>
+                    </div>
+                    <span class="font-bold text-primary">${formatCurrency(plan.budget.data[index])}</span>
+                `;
+                budgetListEl.appendChild(li);
+            });
+        }
+
+        function updateUI() {
+            const plan = tripData[currentPlan];
+            totalCostEl.textContent = formatCurrency(plan.totalCost);
+
+            if (budgetChart) {
+                budgetChart.data.datasets[0].data = plan.budget.data;
+                budgetChart.update();
+            } else {
+                renderChart(plan);
+            }
+            
+            updateBudgetDetails(plan);
+            createItinerary(plan);
+        }
+
+        function renderChart(plan) {
+            budgetChart = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: plan.budget.labels,
+                    datasets: [{
+                        data: plan.budget.data,
+                        backgroundColor: ['#4A6C6F', '#7E9C9F', '#B2CDCF', '#E8E6DA', '#A9A9A9'],
+                        borderColor: '#F8F7F2',
+                        borderWidth: 4,
+                        hoverOffset: 8
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    cutout: '65%',
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    let label = context.label || '';
+                                    if (label) {
+                                        label += ': ';
+                                    }
+                                    if (context.parsed !== null) {
+                                        label += formatCurrency(context.parsed);
+                                    }
+                                    return label;
+                                }
+                            },
+                            backgroundColor: 'rgba(51, 61, 68, 0.9)',
+                            titleFont: { size: 14, weight: 'bold' },
+                            bodyFont: { size: 12 },
+                            padding: 10,
+                            cornerRadius: 8,
+                            displayColors: false,
+                        }
+                    }
+                }
+            });
+        }
+
+        planToggle.addEventListener('change', (e) => {
+            currentPlan = e.target.checked ? 'confort' : 'economico';
+            updateUI();
+        });
+
+        // Gemini API integration for Packing List
+        generatePackingListBtn.addEventListener('click', async () => {
+            generatePackingListBtn.disabled = true;
+            packingListSpinner.classList.remove('hidden');
+            packingListOutput.classList.add('hidden');
+            packingListContent.innerHTML = '';
+
+            const currentItinerary = tripData[currentPlan].itinerary;
+            // Extract unique destinations and key activities for the prompt
+            const destinations = [...new Set(currentItinerary.map(item => {
+                if (item.title.includes('Bogotá')) return 'Bogotá (clima frío/templado)';
+                if (item.title.includes('Medellín')) return 'Medellín (clima templado)';
+                if (item.title.includes('Cartagena') || item.title.includes('Islas del Rosario')) return 'Cartagena (clima cálido/playa)';
+                if (item.title.includes('Santa Marta') || item.title.includes('Tayrona') || item.title.includes('Barranquilla')) return 'Santa Marta y Barranquilla (clima cálido/playa, senderismo)';
+                return '';
+            }))].filter(Boolean).join(', ');
+
+            const activities = [...new Set(currentItinerary.map(item => {
+                if (item.details.includes('senderismo') || item.details.includes('Parque Tayrona')) return 'senderismo';
+                if (item.details.includes('playas') || item.details.includes('snorkel') || item.details.includes('catamarán')) return 'actividades de playa';
+                if (item.details.includes('museos') || item.details.includes('Centro Histórico') || item.details.includes('cultura')) return 'visitas culturales';
+                if (item.details.includes('Comuna 13') || item.details.includes('Guatapé')) return 'excursiones';
+                if (item.details.includes('compras')) return 'compras';
+                return '';
+            }))].filter(Boolean).join(', ');
+
+            const prompt = `Genera una lista de equipaje para un viaje de 22 días a Colombia en agosto, visitando ${destinations}. Las actividades incluyen ${activities}. Considera un viaje para dos personas. La respuesta debe ser un JSON con un array de objetos, donde cada objeto tiene una propiedad 'category' (e.g., 'Ropa', 'Documentos', 'Salud') y una propiedad 'items' que es un array de strings con los elementos de esa categoría.`;
+
+            try {
+                let chatHistory = [];
+                chatHistory.push({ role: "user", parts: [{ text: prompt }] });
+                const payload = {
+                    contents: chatHistory,
+                    generationConfig: {
+                        responseMimeType: "application/json",
+                        responseSchema: {
+                            type: "ARRAY",
+                            items: {
+                                type: "OBJECT",
+                                properties: {
+                                    "category": { "type": "STRING" },
+                                    "items": {
+                                        "type": "ARRAY",
+                                        "items": { "type": "STRING" }
+                                    }
+                                },
+                                "propertyOrdering": ["category", "items"]
+                            }
+                        }
+                    }
+                };
+                const apiKey = ""; // If you want to use models other than gemini-2.0-flash or imagen-3.0-generate-002, provide an API key here. Otherwise, leave this as-is.
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const result = await response.json();
+
+                if (result.candidates && result.candidates.length > 0 &&
+                    result.candidates[0].content && result.candidates[0].content.parts &&
+                    result.candidates[0].content.parts.length > 0) {
+                    const json = result.candidates[0].content.parts[0].text;
+                    const parsedJson = JSON.parse(json);
+
+                    parsedJson.forEach(cat => {
+                        const categoryDiv = document.createElement('div');
+                        categoryDiv.innerHTML = `<h4 class="font-semibold text-lg text-gray-800 mb-2">${cat.category}</h4>`;
+                        const ul = document.createElement('ul');
+                        ul.className = 'list-disc list-inside ml-4 space-y-1';
+                        cat.items.forEach(item => {
+                            const li = document.createElement('li');
+                            li.textContent = item;
+                            ul.appendChild(li);
+                        });
+                        categoryDiv.appendChild(ul);
+                        packingListContent.appendChild(categoryDiv);
+                    });
+                    packingListOutput.classList.remove('hidden');
+                } else {
+                    packingListContent.innerHTML = '<p class="text-red-500">Error al generar la lista de equipaje. Inténtalo de nuevo.</p>';
+                    packingListOutput.classList.remove('hidden');
+                }
+            } catch (error) {
+                console.error('Error calling Gemini API:', error);
+                packingListContent.innerHTML = '<p class="text-red-500">Error al conectar con el servicio de IA. Por favor, inténtalo más tarde.</p>';
+                packingListOutput.classList.remove('hidden');
+            } finally {
+                generatePackingListBtn.disabled = false;
+                packingListSpinner.classList.add('hidden');
+            }
+        });
+
+        document.addEventListener('DOMContentLoaded', () => {
+            updateUI();
+        });
+    </script>
+
+</body>
+</html>
